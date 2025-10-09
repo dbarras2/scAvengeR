@@ -1,0 +1,35 @@
+Package: scAvengeR
+Type: Package
+Title: Collection of utilities related to single-cell transcriptomics analyses
+Version: 1.0.0
+Author: David Barras
+Maintainer: The package maintainer <david.barras@chuv.ch>
+Description: This package contains toolkit for single-cell transcriptomics analyses spanning cell type proportion interrogation, differential gene expression, gene pathway analyses and ligand-receptor cell-cell interactions.
+License: file LICENSE
+Encoding: UTF-8
+LazyData: true
+biocViews: SingleCell, Clustering, Visualization
+Depends:
+  R (>= 4.1)
+Imports:
+  BiocManager (>= 1.30.22),
+  ComplexHeatmap (>= 2.16.0),
+  limma,
+  reshape2,
+  crayon,
+  circlize,
+  usethis,
+  scales,
+  dplyr,
+  RColorBrewer,
+  circlize,
+  patchwork,
+  ggplot2,
+  pbapply,
+  Matrix,
+  colorspace
+Suggests:
+  testthat,
+  knitr,
+  rmarkdown
+RoxygenNote: 7.3.3
