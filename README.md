@@ -134,7 +134,7 @@ cell_proportions <- interaction_results$proportion_cell_type
 **Description:** Performs statistical differential analysis of ligand-receptor interactions between conditions and creates comprehensive visualizations including circos plots, heatmaps, and bar plots.
 
 #### Example Visualizations
-[INSERT YOUR LIGAND-RECEPTOR FIGURE HERE]
+<img width="1116" height="336" alt="Example of LR interaction output (Barras et al. Science Immunology. 2024)" src="https://github.com/user-attachments/assets/abbb544c-5179-499b-b2e6-606a2754a5d7" />
 
 #### Usage
 ```r
