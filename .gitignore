@@ -1,2 +1,5 @@
 tests/
 .Rproj.user/
+
+# macOS
+.DS_Store
