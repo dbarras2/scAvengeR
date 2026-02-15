@@ -1,7 +1,7 @@
 Package: scAvengeR
 Type: Package
 Title: Collection of utilities related to single-cell transcriptomics analyses
-Version: 1.0.0
+Version: 1.0.1
 Author: David Barras
 Maintainer: The package maintainer <david.barras@chuv.ch>
 Description: This package contains toolkit for single-cell transcriptomics analyses spanning cell type proportion interrogation, differential gene expression, gene pathway analyses and ligand-receptor cell-cell interactions.

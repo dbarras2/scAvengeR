@@ -11,7 +11,10 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
                                         include_ratio = TRUE,
                                         stratification_names = NULL,
                                         pval_range = NULL,
-                                        stratification_for_ratio = NULL){
+                                        stratification_for_ratio = NULL,
+                                        paired = FALSE,
+                                        sample_order_up = NULL,
+                                        sample_order_dn = NULL){
   require(ComplexHeatmap)
   require(limma)
   require(reshape2)
@@ -21,9 +24,7 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
   require(scales)
   require(dplyr)
 
-  meta <- single_cell_data
-
-  if(is.null(meta)){
+  if(is.null(single_cell_data)){
     warning("Please provide a single-cell metadata object with cell type annotation under the `single_cell_data` parameter as explained in the vignette")
     return()
   }
@@ -36,6 +37,24 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
     return()
   }
 
+  ## Validate paired analysis parameters
+  #########################################################################
+  if(paired){
+    if(is.null(sample_order_up) | is.null(sample_order_dn)){
+      warning("For paired analysis, please provide both `sample_order_up` and `sample_order_dn` vectors containing matched sample names")
+      return()
+    }
+    if(length(sample_order_up) != length(sample_order_dn)){
+      warning("For paired analysis, `sample_order_up` and `sample_order_dn` must have the same length (matched pairs)")
+      return()
+    }
+    if(length(sample_order_up) < 3){
+      warning("Paired analysis requires at least 3 paired samples")
+      return()
+    }
+  }
+  #########################################################################
+
   ## Subset Data
   #########################################################################
   if(!is.null(subset_data)){
@@ -43,15 +62,15 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
       warning("The `subset_data` parameter should be a list")
       return()
     }
-    if(length(which(names(subset_data)  %in% colnames(meta) ==F))>0){
+    if(length(which(names(subset_data)  %in% colnames(single_cell_data) ==F))>0){
       warning("The selected subset_data parameters were not found in col.names of the single-cell object")
       return()
     }
-    idx_to_keep <- 1:nrow(meta)
+    idx_to_keep <- 1:nrow(single_cell_data)
     for(l in 1:length(subset_data)){
-      idx_to_keep <- intersect(idx_to_keep,which(meta[,names(subset_data)[l]] %in% subset_data[[l]]))
+      idx_to_keep <- intersect(idx_to_keep,which(single_cell_data[,names(subset_data)[l]] %in% subset_data[[l]]))
     }
-    meta <- meta[idx_to_keep,]
+    single_cell_data <- single_cell_data[idx_to_keep,]
   }
   #########################################################################
 
@@ -63,7 +82,7 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
       warning("Please provide the name of the column containing the stratification group that will be compared in the single-cell metadata object under the `stratification` parameter")
       return()
     }
-    if(length(which(stratification  %in% colnames(meta) ==F))>0){
+    if(length(which(stratification  %in% colnames(single_cell_data) ==F))>0){
       warning("The selected stratification name parameter was not found in col.names of the single-cell object")
       return()
     }
@@ -71,9 +90,9 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
       warning("Please provide the stratification factor group down `group_up` that will be used for comparison with `group_dn` contained in the `stratification` column")
       return()
     }
-    idx<-which(meta[,stratification]==group_up)
+    idx<-which(single_cell_data[,stratification]==group_up)
     if(length(idx) == 0){
-      warning(paste0("Stratification factor not found for `group_up`; available ones are: ",paste(unique(meta[,stratification]),collapse=", ")
+      warning(paste0("Stratification factor not found for `group_up`; available ones are: ",paste(unique(single_cell_data[,stratification]),collapse=", ")
       ))
       return()
     }
@@ -81,16 +100,16 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
       warning("Please provide the stratification factor group down `group_dn` that will be used for comparison with `group_up` contained in the `stratification` column")
       return()
     }
-    idx<-which(meta[,stratification]==group_dn)
+    idx<-which(single_cell_data[,stratification]==group_dn)
     if(length(idx) == 0){
-      warning(paste0("Stratification factor not found for `group_dn`; available ones are: ",paste(unique(meta[,stratification]),collapse=", ")
+      warning(paste0("Stratification factor not found for `group_dn`; available ones are: ",paste(unique(single_cell_data[,stratification]),collapse=", ")
       ))
       return()
     }
   }
 
   # Creating Sample annotation file
-  Sample_annot <- meta %>%
+  Sample_annot <- single_cell_data %>%
     group_by(across(sample_colname)) %>%
     summarise(across(all_of(stratification), unique))
 
@@ -111,19 +130,19 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
 
   # Define patient levels
   sample_levels <- levels(factor(as.character(Sample_annot[,sample_colname])))
-  meta[,sample_colname] <- factor(meta[,sample_colname], levels = sample_levels)
+  single_cell_data[,sample_colname] <- factor(single_cell_data[,sample_colname], levels = sample_levels)
 
   # Define sample order
-  sample_order_1 <- Sample_annot[which(Sample_annot$Stratif=="up"),sample_colname]
-  sample_order_2 <- Sample_annot[which(Sample_annot$Stratif=="dn"),sample_colname]
+  #sample_order_up <- Sample_annot[which(Sample_annot$Stratif=="up"),sample_colname]
+  #sample_order_down <- Sample_annot[which(Sample_annot$Stratif=="dn"),sample_colname]
   #########################################################################
 
   # List and stratification of all cell types
   #########################################################################
-  order_strat <- order(as.numeric(gsub("Cell_Type_Strat","",colnames(meta)[grep("Cell_Type_Strat",colnames(meta))])))
-  cell_type_strats <- colnames(meta)[grep("Cell_Type_Strat",colnames(meta))][order_strat]
+  order_strat <- order(as.numeric(gsub("Cell_Type_Strat","",colnames(single_cell_data)[grep("Cell_Type_Strat",colnames(single_cell_data))])))
+  cell_type_strats <- colnames(single_cell_data)[grep("Cell_Type_Strat",colnames(single_cell_data))][order_strat]
 
-  if (!is.factor(meta[,cell_type_strats[length(cell_type_strats)]])) {
+  if (!is.factor(single_cell_data[,cell_type_strats[length(cell_type_strats)]])) {
     warning(paste0("Please provide the last cell type stratification (",cell_type_strats[length(cell_type_strats)],") as factor column and define the order of cell types (how it will appear in the heatmap) with levels using factor(x,levels=...)"))
     return()
   }
@@ -131,14 +150,14 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
   column_cell_type <- cell_type_strats[length(cell_type_strats)]
 
   # Vector of granular cell types
-  cell_subtypes <- levels(droplevels(meta[,cell_type_strats[length(cell_type_strats)]]))
+  cell_subtypes <- levels(droplevels(single_cell_data[,cell_type_strats[length(cell_type_strats)]]))
 
   # Vector of bulked categories
   cell_types <- c()
   for(strata in rev(cell_type_strats[-length(cell_type_strats)])){
-    tmp <- meta[order(match(meta[,column_cell_type],cell_subtypes)),strata]
+    tmp <- single_cell_data[order(match(single_cell_data[,column_cell_type],cell_subtypes)),strata]
     for(str in unique(tmp)){
-      if(length(unique(meta[,column_cell_type][which(meta[,strata] == str)]))>1){
+      if(length(unique(single_cell_data[,column_cell_type][which(single_cell_data[,strata] == str)]))>1){
         cell_types <- c(cell_types,str)
       }
     }
@@ -148,13 +167,13 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
   }
 
   # Rename the bulk cell types (the parent cell type that have more than one daughter cell type)
-  meta_backup <- meta
+  single_cell_data_backup <- single_cell_data
   cell_types_bulk <- paste0(cell_types,"_bulk")
   for(strata in rev(cell_type_strats[-length(cell_type_strats)])){
-    tmp <- meta[,strata]
+    tmp <- single_cell_data[,strata]
     idx <- which(!is.na(match(tmp,cell_types)))
     tmp[idx] <- cell_types_bulk[match(tmp,cell_types)[idx]]
-    meta[,strata] <- tmp
+    single_cell_data[,strata] <- tmp
   }
   cell_types <- cell_types_bulk
 
@@ -174,32 +193,75 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
 
   # Decide Statistical Test
   ########################################################################
-  makeStatisticalTest <- function(Imm1,Imm2,test){
-    result<-list()
-    if((length(Imm1[!is.na(Imm1)])<1)|(length(Imm2[!is.na(Imm2)])<1)){
-      result$statistics<-NA
-      result$p.value<-NA
+  makeStatisticalTest <- function(Imm1, Imm2, test, is_paired = FALSE){
+    result <- list()
+
+    # For paired tests, remove pairs where either value is NA (keep pairs aligned)
+    if(is_paired){
+      complete_pairs <- !is.na(Imm1) & !is.na(Imm2)
+      Imm1 <- Imm1[complete_pairs]
+      Imm2 <- Imm2[complete_pairs]
+
+      if(length(Imm1) < 3){
+        result$statistics <- NA
+        result$p.value <- NA
+        return(result)
+      }
+    } else {
+      # For unpaired tests, remove NAs independently
+      Imm1 <- Imm1[!is.na(Imm1)]
+      Imm2 <- Imm2[!is.na(Imm2)]
+    }
+
+    if((length(Imm1) < 1) | (length(Imm2) < 1)){
+      result$statistics <- NA
+      result$p.value <- NA
       return(result)
     }
-    if(test=="ttest"){
-      t<-suppressWarnings(t.test(Imm1,Imm2))
-      result$statistics<-t$statistic
-      result$p.value<-t$p.value
+
+    if(test == "ttest"){
+      t <- suppressWarnings(t.test(Imm1, Imm2, paired = is_paired))
+      result$statistics <- t$statistic
+      result$p.value <- t$p.value
       return(result)
     }
-    if(test=="wilcoxon"){
-      t<-suppressWarnings(wilcox.test(Imm1,Imm2))
-      result$p.value<-t$p.value
-      val<-ifelse((median(Imm1)-median(Imm2))==0,(mean(Imm1)-mean(Imm2)),(median(Imm1)-median(Imm2)))
-      result$statistics<-val
+    if(test == "wilcoxon"){
+      t <- suppressWarnings(wilcox.test(Imm1, Imm2, paired = is_paired))
+      result$p.value <- t$p.value
+      val <- ifelse((median(Imm1, na.rm = TRUE) - median(Imm2, na.rm = TRUE)) == 0,
+                    (mean(Imm1, na.rm = TRUE) - mean(Imm2, na.rm = TRUE)),
+                    (median(Imm1, na.rm = TRUE) - median(Imm2, na.rm = TRUE)))
+      result$statistics <- val
       return(result)
     }
+  }
+
+  # Helper function to order samples for paired analysis
+  # Pairs samples by position: sample_order_up[i] pairs with sample_order_dn[i]
+  # sample_order_up should contain samples from group_up
+  # sample_order_dn should contain samples from group_dn
+  # Returns Imm1 = sample_order_up values, Imm2 = sample_order_dn values
+  # Direction matches unpaired: positive = higher in group_up
+  orderSamplesForPairedTest <- function(proportions_df, sample_colname, sample_order_up, sample_order_dn){
+    # Get values for sample_order_up samples as Imm1
+    Imm1 <- proportions_df$value[match(sample_order_up, proportions_df[[sample_colname]])]
+    names(Imm1) <- sample_order_up
+
+    # Get values for sample_order_dn samples as Imm2
+    Imm2 <- proportions_df$value[match(sample_order_dn, proportions_df[[sample_colname]])]
+    names(Imm2) <- sample_order_dn
+
+    # Replace NA with 0 for samples that exist but have no cells of this type
+    Imm1[is.na(Imm1)] <- 0
+    Imm2[is.na(Imm2)] <- 0
+
+    return(list(Imm1 = Imm1, Imm2 = Imm2))
   }
   ########################################################################
 
   # Proportions out of total cells
   ########################################################################
-  Proportions <- prop.table(table(meta[,which(colnames(meta) %in% c(sample_colname,column_cell_type))]),1)
+  Proportions <- prop.table(table(single_cell_data[,which(colnames(single_cell_data) %in% c(sample_colname,column_cell_type))]),1)
   Proportions <- reshape2::melt(Proportions)
   Proportions$Stratif <- Sample_annot$Stratif[match(Proportions[,sample_colname],Sample_annot[,sample_colname])]
   colnames(Proportions)[2] <- "Cell_Type"
@@ -207,18 +269,24 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
   for(i in 1:length(cell_subtypes)){
     tmp1 <- Proportions[which(Proportions$Cell_Type==cell_subtypes[i]),]
     if(nrow(tmp1)>0){
-      Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
-      Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
+      # Apply pairing if requested - pairs by position regardless of group
+      if(paired){
+        ordered_samples <- orderSamplesForPairedTest(tmp1, sample_colname, sample_order_up, sample_order_dn)
+        Imm1 <- ordered_samples$Imm1
+        Imm2 <- ordered_samples$Imm2
+      } else {
+        Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
+        Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
+      }
 
-
-      t <- makeStatisticalTest(Imm1[!is.na(Imm1)],Imm2[!is.na(Imm2)],statistics)
+      t <- makeStatisticalTest(Imm1, Imm2, statistics, is_paired = paired)
       collect_stats["All",cell_subtypes[i]] <- ifelse(t$statistic>0,(-log10(t$p.value)),-(-log10(t$p.value)))
     }
   }
 
   strats <- cell_type_strats[-length(cell_type_strats)]
   for(strat in strats){
-    Proportions <- prop.table(table(meta[,which(colnames(meta) %in% c(sample_colname,strat))]),1)
+    Proportions <- prop.table(table(single_cell_data[,which(colnames(single_cell_data) %in% c(sample_colname,strat))]),1)
     Proportions <- reshape2::melt(Proportions)
     Proportions$Stratif <- Sample_annot$Stratif[match(Proportions[,sample_colname],Sample_annot[,sample_colname])]
     colnames(Proportions)[2] <- "Cell_Type"
@@ -227,10 +295,18 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
     cts <- cts[which(cts %in% colnames(collect_stats))]
     for(ct in cts){
       tmp1 <- Proportions[which(Proportions$Cell_Type==ct),]
-      Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
-      Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
 
-      t <- makeStatisticalTest(Imm1[!is.na(Imm1)],Imm2[!is.na(Imm2)],statistics)
+      # Apply pairing if requested - pairs by position regardless of group
+      if(paired){
+        ordered_samples <- orderSamplesForPairedTest(tmp1, sample_colname, sample_order_up, sample_order_dn)
+        Imm1 <- ordered_samples$Imm1
+        Imm2 <- ordered_samples$Imm2
+      } else {
+        Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
+        Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2)<-as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
+      }
+
+      t <- makeStatisticalTest(Imm1, Imm2, statistics, is_paired = paired)
       collect_stats["All",ct] <- ifelse(t$statistic>0,(-log10(t$p.value)),-(-log10(t$p.value)))
     }
   }
@@ -242,23 +318,31 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
   # Interrogate Fine cell subtypes out of all strats
   strats <- cell_type_strats[-length(cell_type_strats)]
   for(strat in strats){
-    outofs <- unique(meta[,strat])
+    outofs <- unique(single_cell_data[,strat])
     for(outof in outofs){
-      idx_outof <- which(meta[,strat] == outof)
+      idx_outof <- which(single_cell_data[,strat] == outof)
 
-      Proportions <- prop.table(table(meta[idx_outof,which(colnames(meta) %in% c(sample_colname,column_cell_type))]),1)
+      Proportions <- prop.table(table(single_cell_data[idx_outof,which(colnames(single_cell_data) %in% c(sample_colname,column_cell_type))]),1)
       Proportions <- reshape2::melt(Proportions)
       Proportions$Stratif <- Sample_annot$Stratif[match(Proportions[,sample_colname],Sample_annot[,sample_colname])]
       colnames(Proportions)[2] <- "Cell_Type"
 
-      cts <- as.character(unique(meta[idx_outof,column_cell_type]))
+      cts <- as.character(unique(single_cell_data[idx_outof,column_cell_type]))
       cts <- cts[which(cts %in% colnames(collect_stats))]
       for(ct in cts){
         tmp1 <- Proportions[which(Proportions$Cell_Type==ct),]
-        Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
-        Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
 
-        t <- makeStatisticalTest(Imm1[!is.na(Imm1)],Imm2[!is.na(Imm2)],statistics)
+        # Apply pairing if requested - pairs by position regardless of group
+        if(paired){
+          ordered_samples <- orderSamplesForPairedTest(tmp1, sample_colname, sample_order_up, sample_order_dn)
+          Imm1 <- ordered_samples$Imm1
+          Imm2 <- ordered_samples$Imm2
+        } else {
+          Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
+          Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
+        }
+
+        t <- makeStatisticalTest(Imm1, Imm2, statistics, is_paired = paired)
         collect_stats[strat,ct] <- ifelse(t$statistic>0,(-log10(t$p.value)),-(-log10(t$p.value)))
       }
     }
@@ -272,23 +356,31 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
       for(o in 1:(s-1)){
         outof_strat <- strats[o]
 
-        outofs <- unique(meta[,outof_strat])
+        outofs <- unique(single_cell_data[,outof_strat])
         for(outof in outofs){
-          idx_outof <- which(meta[,outof_strat] == outof)
+          idx_outof <- which(single_cell_data[,outof_strat] == outof)
 
-          Proportions <- prop.table(table(meta[idx_outof,which(colnames(meta) %in% c(sample_colname,strat))]),1)
+          Proportions <- prop.table(table(single_cell_data[idx_outof,which(colnames(single_cell_data) %in% c(sample_colname,strat))]),1)
           Proportions <- reshape2::melt(Proportions)
           Proportions$Stratif <- Sample_annot$Stratif[match(Proportions[,sample_colname],Sample_annot[,sample_colname])]
           colnames(Proportions)[2] <- "Cell_Type"
 
-          cts <- as.character(unique(meta[idx_outof,strat]))
+          cts <- as.character(unique(single_cell_data[idx_outof,strat]))
           cts <- cts[which(cts %in% colnames(collect_stats))]
           for(ct in cts){
             tmp1 <- Proportions[which(Proportions$Cell_Type==ct),]
-            Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
-            Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
 
-            t <- makeStatisticalTest(Imm1[!is.na(Imm1)],Imm2[!is.na(Imm2)],statistics)
+            # Apply pairing if requested - pairs by position regardless of group
+            if(paired){
+              ordered_samples <- orderSamplesForPairedTest(tmp1, sample_colname, sample_order_up, sample_order_dn)
+              Imm1 <- ordered_samples$Imm1
+              Imm2 <- ordered_samples$Imm2
+            } else {
+              Imm1 <- tmp1$value[which(tmp1$Stratif=="up")];names(Imm1) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")])
+              Imm2 <- tmp1$value[which(tmp1$Stratif=="dn")];names(Imm2) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")])
+            }
+
+            t <- makeStatisticalTest(Imm1, Imm2, statistics, is_paired = paired)
             collect_stats[outof_strat,ct] <- ifelse(t$statistic>0,(-log10(t$p.value)),-(-log10(t$p.value)))
           }
         }
@@ -306,30 +398,30 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
       warning("The `stratification_for_ratio` parameter should be a list")
       return()
     }
-    if(length(which(names(stratification_for_ratio)  %in% colnames(meta) ==F))>0){
+    if(length(which(names(stratification_for_ratio)  %in% colnames(single_cell_data) ==F))>0){
       warning("The selected stratification_for_ratio parameters were not found in col.names of the single-cell object")
       return()
     }
-    idx_to_keep <- 1:nrow(meta_backup)
+    idx_to_keep <- 1:nrow(single_cell_data_backup)
     for(l in 1:length(stratification_for_ratio)){
-      idx_to_keep <- intersect(idx_to_keep,which(meta_backup[,names(stratification_for_ratio)[l]] %in% stratification_for_ratio[[l]]))
+      idx_to_keep <- intersect(idx_to_keep,which(single_cell_data_backup[,names(stratification_for_ratio)[l]] %in% stratification_for_ratio[[l]]))
     }
-    meta_ratio <- meta[idx_to_keep,]
+    single_cell_data_ratio <- single_cell_data[idx_to_keep,]
   } else {
-    meta_ratio <- meta
-    }
+    single_cell_data_ratio <- single_cell_data
+  }
 
   # Compute Ratio for all Cell Type at all stratification and for all patients
   strats <- cell_type_strats
   for(s in 1:length(strats)){
     strat <- strats[s]
     if(s==1){
-      Proportions <- prop.table(table(meta_ratio[,which(colnames(meta_ratio) %in% c(sample_colname,strat))]),1)
+      Proportions <- prop.table(table(single_cell_data_ratio[,which(colnames(single_cell_data_ratio) %in% c(sample_colname,strat))]),1)
       Proportions <- reshape2::melt(Proportions)
       Proportions$Stratif <- Sample_annot$Stratif[match(Proportions[,sample_colname],Sample_annot[,sample_colname])]
       colnames(Proportions)[2] <- "Cell_Type"
     } else {
-      Proportions_tmp <- prop.table(table(meta_ratio[,which(colnames(meta_ratio) %in% c(sample_colname,strat))]),1)
+      Proportions_tmp <- prop.table(table(single_cell_data_ratio[,which(colnames(single_cell_data_ratio) %in% c(sample_colname,strat))]),1)
       Proportions_tmp <- reshape2::melt(Proportions_tmp)
       Proportions_tmp$Stratif <- Sample_annot$Stratif[match(Proportions_tmp[,sample_colname],Sample_annot[,sample_colname])]
       colnames(Proportions_tmp)[2] <- "Cell_Type"
@@ -360,11 +452,24 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
         if(length(which(tmp1$Ratio==(Inf)))>0){tmp1$Ratio[which(tmp1$Ratio==(Inf))]<-NA}
       }
 
-      Imm1 <- tmp1$Ratio[which(tmp1$Stratif=="up")];names(Imm1) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")]);Imm1<-Imm1[complete.cases(Imm1)]
-      Imm2 <- tmp1$Ratio[which(tmp1$Stratif=="dn")];names(Imm2) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")]);Imm2<-Imm2[complete.cases(Imm2)]
+      # Apply pairing if requested - pairs by position regardless of group
+      if(paired){
+        # Get ratio values for sample_order_up samples as Imm1
+        Imm1 <- tmp1$Ratio[match(sample_order_up, tmp1[[sample_colname]])]
+        names(Imm1) <- sample_order_up
+
+        # Get ratio values for sample_order_dn samples as Imm2
+        Imm2 <- tmp1$Ratio[match(sample_order_dn, tmp1[[sample_colname]])]
+        names(Imm2) <- sample_order_dn
+
+        # Keep NA for missing (don't replace with 0 for ratios)
+      } else {
+        Imm1 <- tmp1$Ratio[which(tmp1$Stratif=="up")];names(Imm1) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="up")]);Imm1<-Imm1[complete.cases(Imm1)]
+        Imm2 <- tmp1$Ratio[which(tmp1$Stratif=="dn")];names(Imm2) <- as.character(tmp1[,sample_colname][which(tmp1$Stratif=="dn")]);Imm2<-Imm2[complete.cases(Imm2)]
+      }
 
       if((length(Imm1) > 0)&(length(Imm2) > 0)){
-        t <- makeStatisticalTest(Imm1[!is.na(Imm1)],Imm2[!is.na(Imm2)],statistics)
+        t <- makeStatisticalTest(Imm1, Imm2, statistics, is_paired = paired)
         collect_stats_ratio[ct_row,ct_col] <- ifelse(t$statistic>0,(-log10(t$p.value)),-(-log10(t$p.value)))
       }
     }
@@ -391,7 +496,12 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
     signif_annot[which(signif[,i] > (-log10(0.001))),i] <- "***"
   }
 
-  lim <- max(abs(collect_stats),na.rm=T)
+  # Handle case where all values are NA (avoid -Inf error)
+  lim <- max(abs(collect_stats), na.rm = TRUE)
+  if(!is.finite(lim) || lim == 0){
+    warning("No valid statistics could be computed. Check that you have sufficient samples in each group.")
+    lim <- 1  # Default to 1 to avoid colorRamp2 error
+  }
 
   if(!is.null(pval_range)){
     lim <- max(abs(pval_range),na.rm=T)
@@ -410,6 +520,12 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
   if((is.null(group_dn_col))&(is.null(group_up_col))){
     col_fun = colorRamp2(c(-lim, 0, lim), c("#3A34DF","white","#DF3434"))
   }
+
+  # Create title based on paired/unpaired
+  test_type <- ifelse(paired, "paired ", "")
+  title_suffix <- ifelse(statistics == "wilcoxon",
+                         paste0(" (", test_type, "Wilcoxon)"),
+                         paste0(" (", test_type, "t-test)"))
   ########################################################################
 
   if(length(row_norm) == 1){
@@ -418,7 +534,7 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
                        col=col_fun,cluster_rows=F,
                        #row_order = 1:nrow(collect_stats),
                        column_order = 1:ncol(collect_stats),
-                       column_title = "Cell Type Proportion and Ratio",
+                       column_title = paste0("Cell Type Proportion and Ratio", title_suffix),
                        column_title_gp = gpar(fontsize = 15, fontface = "bold"),
                        row_names_side = "left",column_names_side = "top",
                        row_names_gp = gpar(fontsize = 6),column_names_gp = gpar(fontsize = 6),
@@ -436,7 +552,7 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
 
     # Create unique categories in alphabetical order
     Gap_template <- data.frame("CT"=colnames(collect_stats))
-    Gap_template$strat <- meta[match(Gap_template$CT,meta[,column_cell_type]),cell_type_strats[length(cell_type_strats)-1]]
+    Gap_template$strat <- single_cell_data[match(Gap_template$CT,single_cell_data[,column_cell_type]),cell_type_strats[length(cell_type_strats)-1]]
     idx <- which(is.na(Gap_template$strat))
     if(length(idx) > 0){
       Gap_template$strat[idx]<-"Bulk"
@@ -491,7 +607,7 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
                          col=col_fun,cluster_rows=F,
                          #row_order = 1:nrow(collect_stats),
                          column_order = 1:ncol(collect_stats),
-                         column_title = "Cell Type Proportion",
+                         column_title = paste0("Cell Type Proportion", title_suffix),
                          column_title_gp = gpar(fontsize = 15, fontface = "bold"),
                          row_names_side = "left",column_names_side = "top",
                          row_names_gp = gpar(fontsize = 6),column_names_gp = gpar(fontsize = 6),
@@ -516,7 +632,7 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
                          col=col_fun,cluster_rows=F,
                          #row_order = 1:nrow(collect_stats),
                          column_order = 1:ncol(collect_stats),
-                         column_title = "Cell Type Proportion and Ratio",
+                         column_title = paste0("Cell Type Proportion and Ratio", title_suffix),
                          column_title_gp = gpar(fontsize = 15, fontface = "bold"),
                          row_names_side = "left",column_names_side = "top",
                          row_names_gp = gpar(fontsize = 6),column_names_gp = gpar(fontsize = 6),
@@ -537,19 +653,19 @@ CellType_Proportion_Heatmap <- function(single_cell_data,
                          top_annotation = HeatmapAnnotation(foo = anno_block(gp = gpar(fill = "white"),
                                                                              labels = cat,
                                                                              labels_gp = gpar(col = "black", fontsize = 5))))
-    }
-  }
+    } # end if(include_ratio)
+  } # end else (length(row_norm) != 1)
 
-  row_names <- rownames(collect_stats)  # Save row names
+  # Clean up NaN values in statistics
+  row_names <- rownames(collect_stats)
   collect_stats[] <- lapply(collect_stats, function(x) {
     if (is.numeric(x)) x[is.nan(x)] <- NA
     return(x)
   })
   rownames(collect_stats) <- row_names
 
-  return(list("heatmap"=heatmap,"statistics"=collect_stats))
-
-}
+  return(list("heatmap" = heatmap, "statistics" = collect_stats))
+} # end CellType_Proportion_Heatmap function
 
 #' @export
 Compute_Proportions_Ratios <- function(single_cell_data,
